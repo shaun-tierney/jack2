@@ -52,7 +52,6 @@ class JackClient;
 
 struct JackLibGlobals
 {
-    JackSynchro fSynchroTable[CLIENT_NUM];                  /*! Shared synchro table */
     sigset_t fProcessSignals;
 
     static int fClientCount;
@@ -79,9 +78,6 @@ struct JackLibGlobals
     ~JackLibGlobals()
     {
         jack_log("~JackLibGlobals");
-        for (int i = 0; i < CLIENT_NUM; i++) {
-            fSynchroTable[i].Disconnect();
-        }
         JackMessageBuffer::Destroy();
 
        // Restore old signal mask

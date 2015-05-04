@@ -94,9 +94,9 @@ jack_client_t* jack_client_new_aux(const char* client_name, jack_options_t optio
     }
 
     if (JACK_DEBUG) {
-        client = new JackDebugClient(new JackLibClient(GetSynchroTable())); // Debug mode
+        client = new JackDebugClient(new JackLibClient(NULL)); // Debug mode
     } else {
-        client = new JackLibClient(GetSynchroTable());
+        client = new JackLibClient(NULL);
     }
 
     int res = client->Open(va.server_name, client_name, va.session_id, options, status);
@@ -147,9 +147,9 @@ static jack_client_t* jack_client_open_aux(const char* client_name, jack_options
     }
 
     if (JACK_DEBUG) {
-        client = new JackDebugClient(new JackLibClient(GetSynchroTable())); // Debug mode
+        client = new JackDebugClient(new JackLibClient(NULL)); // Debug mode
     } else {
-        client = new JackLibClient(GetSynchroTable());
+        client = new JackLibClient(NULL);
     }
 
     int res = client->Open(va.server_name, client_name, va.session_id, options, status);

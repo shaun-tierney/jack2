@@ -39,12 +39,16 @@ namespace Jack
 
 #define IsRealTime() ((fProcess != NULL) | (fThreadFun != NULL) | (fSync != NULL) | (fTimebase != NULL))
 
-JackClient::JackClient():fThread(this)
+JackClient::JackClient():fThread(this),fSynchroTable(NULL)
 {}
 
-JackClient::JackClient(JackSynchro* table):fThread(this)
+JackClient::JackClient(JackSynchro* table):fThread(this),fSynchroTable(NULL)
 {
-    fSynchroTable = table;
+    fSynchroTable = ( JackSynchro * )malloc( sizeof( JackSynchro ) * CLIENT_NUM );
+    if( !fSynchroTable )
+    {
+        throw std::bad_alloc();
+    }
     fProcess = NULL;
     fGraphOrder = NULL;
     fXrun = NULL;
@@ -85,7 +89,15 @@ JackClient::JackClient(JackSynchro* table):fThread(this)
 }
 
 JackClient::~JackClient()
-{}
+{
+    if( fSynchroTable )
+    {
+        for (int i = 0; i < CLIENT_NUM; i++) {
+            fSynchroTable[i].Disconnect();
+        }
+        free( fSynchroTable );
+    }
+}
 
 void JackClient::ShutDown(jack_status_t code, const char* message)
 {

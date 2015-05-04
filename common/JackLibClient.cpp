@@ -27,12 +27,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
 namespace Jack
 {
 
-// Used for external C API (JackAPI.cpp)
-JackSynchro* GetSynchroTable()
-{
-    return (JackLibGlobals::fGlobals ? JackLibGlobals::fGlobals->fSynchroTable : 0);
-}
-
 //-------------------
 // Client management
 //-------------------
