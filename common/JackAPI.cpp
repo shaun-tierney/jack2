@@ -39,6 +39,12 @@ extern "C"
     typedef void (*print_function)(const char*);
     typedef void *(*thread_routine)(void*);
 
+    typedef struct
+    {
+        JackClient *    client; /* associated client */
+        jack_port_id_t  index;  /* port index */
+    } port_info;
+
     LIB_EXPORT const char* JACK_METADATA_PRETTY_NAME = "http://jackaudio.org/metadata/pretty-name";
     LIB_EXPORT const char* JACK_METADATA_HARDWARE = "http://jackaudio.org/metadata/hardware";
     LIB_EXPORT const char* JACK_METADATA_CONNECTED = "http://jackaudio.org/metadata/connected";
@@ -306,7 +312,7 @@ static inline bool CheckBufferSize(jack_nframes_t buffer_size)
     return (buffer_size >= 1 && buffer_size <= BUFFER_SIZE_MAX);
 }
 
-static inline void WaitGraphChange()
+static inline void WaitGraphChange( JackClient * client )
 {
     /*
     TLS key that is set only in RT thread, so never waits for pending
@@ -314,7 +320,7 @@ static inline void WaitGraphChange()
     */
 
     if (jack_tls_get(JackGlobals::fRealTimeThread) == NULL) {
-        JackGraphManager* manager = GetGraphManager();
+        JackGraphManager* manager = client->GetGraphManager();
         JackEngineControl* control = GetEngineControl();
         assert(manager);
         assert(control);
@@ -363,13 +369,13 @@ LIB_EXPORT void* jack_port_get_buffer(jack_port_t* port, jack_nframes_t frames)
 {
     JackGlobals::CheckContext("jack_port_get_buffer");
 
-    uintptr_t port_aux = (uintptr_t)port;
-    jack_port_id_t myport = (jack_port_id_t)port_aux;
+    port_info * port_aux = (port_info *)port;
+    jack_port_id_t myport = port_aux->index;
     if (!CheckPort(myport)) {
         jack_error("jack_port_get_buffer called with an incorrect port %ld", myport);
         return NULL;
     } else {
-        JackGraphManager* manager = GetGraphManager();
+        JackGraphManager* manager = port_aux->client->GetGraphManager();
         return (manager ? manager->GetBuffer(myport, frames) : NULL);
     }
 }
@@ -383,13 +389,13 @@ LIB_EXPORT const char* jack_port_name(const jack_port_t* port)
 {
     JackGlobals::CheckContext("jack_port_name");
 
-    uintptr_t port_aux = (uintptr_t)port;
-    jack_port_id_t myport = (jack_port_id_t)port_aux;
+    port_info * port_aux = (port_info *)port;
+    jack_port_id_t myport = port_aux->index;
     if (!CheckPort(myport)) {
         jack_error("jack_port_name called with an incorrect port %ld", myport);
         return NULL;
     } else {
-        JackGraphManager* manager = GetGraphManager();
+        JackGraphManager* manager = port_aux->client->GetGraphManager();
         return (manager ? manager->GetPort(myport)->GetName() : NULL);
     }
 }
@@ -398,13 +404,13 @@ LIB_EXPORT const char* jack_port_short_name(const jack_port_t* port)
 {
     JackGlobals::CheckContext("jack_port_short_name");
 
-    uintptr_t port_aux = (uintptr_t)port;
-    jack_port_id_t myport = (jack_port_id_t)port_aux;
+    port_info * port_aux = (port_info *)port;
+    jack_port_id_t myport = port_aux->index;
     if (!CheckPort(myport)) {
         jack_error("jack_port_short_name called with an incorrect port %ld", myport);
         return NULL;
     } else {
-        JackGraphManager* manager = GetGraphManager();
+        JackGraphManager* manager = port_aux->client->GetGraphManager();
         return (manager ? manager->GetPort(myport)->GetShortName() : NULL);
     }
 }
@@ -413,13 +419,13 @@ LIB_EXPORT int jack_port_flags(const jack_port_t* port)
 {
     JackGlobals::CheckContext("jack_port_flags");
 
-    uintptr_t port_aux = (uintptr_t)port;
-    jack_port_id_t myport = (jack_port_id_t)port_aux;
+    port_info * port_aux = (port_info *)port;
+    jack_port_id_t myport = port_aux->index;
     if (!CheckPort(myport)) {
         jack_error("jack_port_flags called with an incorrect port %ld", myport);
         return -1;
     } else {
-        JackGraphManager* manager = GetGraphManager();
+        JackGraphManager* manager = port_aux->client->GetGraphManager();
         return (manager ? manager->GetPort(myport)->GetFlags() : -1);
     }
 }
@@ -428,13 +434,13 @@ LIB_EXPORT const char* jack_port_type(const jack_port_t* port)
 {
     JackGlobals::CheckContext("jack_port_type");
 
-    uintptr_t port_aux = (uintptr_t)port;
-    jack_port_id_t myport = (jack_port_id_t)port_aux;
+    port_info * port_aux = (port_info *)port;
+    jack_port_id_t myport = port_aux->index;
     if (!CheckPort(myport)) {
         jack_error("jack_port_flags called an incorrect port %ld", myport);
         return NULL;
     } else {
-        JackGraphManager* manager = GetGraphManager();
+        JackGraphManager* manager = port_aux->client->GetGraphManager();
         return (manager ? manager->GetPort(myport)->GetType() : NULL);
     }
 }
@@ -443,13 +449,13 @@ LIB_EXPORT jack_port_type_id_t jack_port_type_id(const jack_port_t *port)
 {
     JackGlobals::CheckContext("jack_port_type_id");
 
-    uintptr_t port_aux = (uintptr_t)port;
-    jack_port_id_t myport = (jack_port_id_t)port_aux;
+    port_info * port_aux = (port_info *)port;
+    jack_port_id_t myport = port_aux->index;
     if (!CheckPort(myport)) {
         jack_error("jack_port_type_id called an incorrect port %ld", myport);
         return 0;
     } else {
-        JackGraphManager* manager = GetGraphManager();
+        JackGraphManager* manager = port_aux->client->GetGraphManager();
         return (manager ? GetPortTypeId(manager->GetPort(myport)->GetType()) : 0);
     }
 }
@@ -458,14 +464,14 @@ LIB_EXPORT int jack_port_connected(const jack_port_t* port)
 {
     JackGlobals::CheckContext("jack_port_connected");
 
-    uintptr_t port_aux = (uintptr_t)port;
-    jack_port_id_t myport = (jack_port_id_t)port_aux;
+    port_info * port_aux = (port_info *)port;
+    jack_port_id_t myport = port_aux->index;
     if (!CheckPort(myport)) {
         jack_error("jack_port_connected called with an incorrect port %ld", myport);
         return -1;
     } else {
-        WaitGraphChange();
-        JackGraphManager* manager = GetGraphManager();
+        WaitGraphChange( port_aux->client );
+        JackGraphManager* manager = port_aux->client->GetGraphManager();
         return (manager ? manager->GetConnectionsNum(myport) : -1);
     }
 }
@@ -474,8 +480,8 @@ LIB_EXPORT int jack_port_connected_to(const jack_port_t* port, const char* port_
 {
     JackGlobals::CheckContext("jack_port_connected_to");
 
-    uintptr_t port_aux = (uintptr_t)port;
-    jack_port_id_t src = (jack_port_id_t)port_aux;
+    port_info * port_aux = (port_info *)port;
+    jack_port_id_t src = port_aux->index;
     if (!CheckPort(src)) {
         jack_error("jack_port_connected_to called with an incorrect port %ld", src);
         return -1;
@@ -483,8 +489,8 @@ LIB_EXPORT int jack_port_connected_to(const jack_port_t* port, const char* port_
         jack_error("jack_port_connected_to called with a NULL port name");
         return -1;
     } else {
-        WaitGraphChange();
-        JackGraphManager* manager = GetGraphManager();
+        WaitGraphChange( port_aux->client );
+        JackGraphManager* manager = port_aux->client->GetGraphManager();
         jack_port_id_t dst = (manager ? manager->GetPort(port_name) : NO_PORT);
         if (dst == NO_PORT) {
             jack_error("Unknown destination port port_name = %s", port_name);
@@ -499,19 +505,23 @@ LIB_EXPORT int jack_port_tie(jack_port_t* src, jack_port_t* dst)
 {
     JackGlobals::CheckContext("jack_port_tie");
 
-    uintptr_t src_aux = (uintptr_t)src;
-    jack_port_id_t mysrc = (jack_port_id_t)src_aux;
+    port_info * src_aux = (port_info *)src;
+    jack_port_id_t mysrc = src_aux->index;
     if (!CheckPort(mysrc)) {
         jack_error("jack_port_tie called with a NULL src port");
         return -1;
     }
-    uintptr_t dst_aux = (uintptr_t)dst;
-    jack_port_id_t mydst = (jack_port_id_t)dst_aux;
+    port_info * dst_aux = (port_info *)dst;
+    jack_port_id_t mydst = dst_aux->index;
     if (!CheckPort(mydst)) {
         jack_error("jack_port_tie called with a NULL dst port");
         return -1;
     }
-    JackGraphManager* manager = GetGraphManager();
+    if( src_aux->client != dst_aux->client ) {
+        jack_error("jack_port_tie called with a NULL dst port");
+        return -1;
+    }
+    JackGraphManager* manager = src_aux->client->GetGraphManager();
     if (manager && manager->GetPort(mysrc)->GetRefNum() != manager->GetPort(mydst)->GetRefNum()) {
         jack_error("jack_port_tie called with ports not belonging to the same client");
         return -1;
@@ -524,13 +534,13 @@ LIB_EXPORT int jack_port_untie(jack_port_t* port)
 {
     JackGlobals::CheckContext("jack_port_untie");
 
-    uintptr_t port_aux = (uintptr_t)port;
-    jack_port_id_t myport = (jack_port_id_t)port_aux;
+    port_info * port_aux = (port_info *)port;
+    jack_port_id_t myport = port_aux->index;
     if (!CheckPort(myport)) {
         jack_error("jack_port_untie called with an incorrect port %ld", myport);
         return -1;
     } else {
-        JackGraphManager* manager = GetGraphManager();
+        JackGraphManager* manager = port_aux->client->GetGraphManager();
         return (manager ? manager->GetPort(myport)->UnTie() : -1);
     }
 }
@@ -539,14 +549,14 @@ LIB_EXPORT jack_nframes_t jack_port_get_latency(jack_port_t* port)
 {
     JackGlobals::CheckContext("jack_port_get_latency");
 
-    uintptr_t port_aux = (uintptr_t)port;
-    jack_port_id_t myport = (jack_port_id_t)port_aux;
+    port_info * port_aux = (port_info *)port;
+    jack_port_id_t myport = port_aux->index;
     if (!CheckPort(myport)) {
         jack_error("jack_port_get_latency called with an incorrect port %ld", myport);
         return 0;
     } else {
-        WaitGraphChange();
-        JackGraphManager* manager = GetGraphManager();
+        WaitGraphChange( port_aux->client );
+        JackGraphManager* manager = port_aux->client->GetGraphManager();
         return (manager ? manager->GetPort(myport)->GetLatency() : 0);
     }
 }
@@ -555,12 +565,12 @@ LIB_EXPORT void jack_port_set_latency(jack_port_t* port, jack_nframes_t frames)
 {
     JackGlobals::CheckContext("jack_port_set_latency");
 
-    uintptr_t port_aux = (uintptr_t)port;
-    jack_port_id_t myport = (jack_port_id_t)port_aux;
+    port_info * port_aux = (port_info *)port;
+    jack_port_id_t myport = port_aux->index;
     if (!CheckPort(myport)) {
         jack_error("jack_port_set_latency called with an incorrect port %ld", myport);
     } else {
-        JackGraphManager* manager = GetGraphManager();
+        JackGraphManager* manager = port_aux->client->GetGraphManager();
         if (manager)
             manager->GetPort(myport)->SetLatency(frames);
     }
@@ -570,13 +580,13 @@ LIB_EXPORT void jack_port_get_latency_range(jack_port_t *port, jack_latency_call
 {
     JackGlobals::CheckContext("jack_port_get_latency_range");
 
-    uintptr_t port_aux = (uintptr_t)port;
-    jack_port_id_t myport = (jack_port_id_t)port_aux;
+    port_info * port_aux = (port_info *)port;
+    jack_port_id_t myport = port_aux->index;
     if (!CheckPort(myport)) {
         jack_error("jack_port_get_latency_range called with an incorrect port %ld", myport);
     } else {
-        WaitGraphChange();
-        JackGraphManager* manager = GetGraphManager();
+        WaitGraphChange( port_aux->client );
+        JackGraphManager* manager = port_aux->client->GetGraphManager();
         if (manager)
             manager->GetPort(myport)->GetLatencyRange(mode, range);
     }
@@ -586,13 +596,13 @@ LIB_EXPORT void jack_port_set_latency_range(jack_port_t *port, jack_latency_call
 {
     JackGlobals::CheckContext("jack_port_set_latency_range");
 
-    uintptr_t port_aux = (uintptr_t)port;
-    jack_port_id_t myport = (jack_port_id_t)port_aux;
+    port_info * port_aux = (port_info *)port;
+    jack_port_id_t myport = port_aux->index;
     if (!CheckPort(myport)) {
         jack_error("jack_port_set_latency_range called with an incorrect port %ld", myport);
     } else {
-        WaitGraphChange();
-        JackGraphManager* manager = GetGraphManager();
+        WaitGraphChange( port_aux->client );
+        JackGraphManager* manager = port_aux->client->GetGraphManager();
         if (manager)
             manager->GetPort(myport)->SetLatencyRange(mode, range);
     }
@@ -604,8 +614,8 @@ LIB_EXPORT int jack_recompute_total_latency(jack_client_t* ext_client, jack_port
 
 
     JackClient* client = (JackClient*)ext_client;
-    uintptr_t port_aux = (uintptr_t)port;
-    jack_port_id_t myport = (jack_port_id_t)port_aux;
+    port_info * port_aux = (port_info *)port;
+    jack_port_id_t myport = port_aux->index;
     if (client == NULL) {
         jack_error("jack_recompute_total_latency called with a NULL client");
         return -1;
@@ -613,8 +623,8 @@ LIB_EXPORT int jack_recompute_total_latency(jack_client_t* ext_client, jack_port
         jack_error("jack_recompute_total_latency called with a NULL port");
         return -1;
     } else {
-        WaitGraphChange();
-        JackGraphManager* manager = GetGraphManager();
+        WaitGraphChange( client );
+        JackGraphManager* manager = client->GetGraphManager();
         return (manager ? manager->ComputeTotalLatency(myport) : -1);
     }
 }
@@ -636,8 +646,8 @@ LIB_EXPORT int jack_port_set_name(jack_port_t* port, const char* name)
 {
     JackGlobals::CheckContext("jack_port_set_name");
 
-    uintptr_t port_aux = (uintptr_t)port;
-    jack_port_id_t myport = (jack_port_id_t)port_aux;
+    port_info * port_aux = (port_info *)port;
+    jack_port_id_t myport = port_aux->index;
     if (!CheckPort(myport)) {
         jack_error("jack_port_set_name called with an incorrect port %ld", myport);
         return -1;
@@ -660,8 +670,8 @@ LIB_EXPORT int jack_port_set_alias(jack_port_t* port, const char* name)
 {
     JackGlobals::CheckContext("jack_port_set_alias");
 
-    uintptr_t port_aux = (uintptr_t)port;
-    jack_port_id_t myport = (jack_port_id_t)port_aux;
+    port_info * port_aux = (port_info *)port;
+    jack_port_id_t myport = port_aux->index;
     if (!CheckPort(myport)) {
         jack_error("jack_port_set_alias called with an incorrect port %ld", myport);
         return -1;
@@ -669,7 +679,7 @@ LIB_EXPORT int jack_port_set_alias(jack_port_t* port, const char* name)
         jack_error("jack_port_set_alias called with a NULL port name");
         return -1;
     } else {
-        JackGraphManager* manager = GetGraphManager();
+        JackGraphManager* manager = port_aux->client->GetGraphManager();
         return (manager ? manager->GetPort(myport)->SetAlias(name) : -1);
     }
 }
@@ -678,8 +688,8 @@ LIB_EXPORT int jack_port_unset_alias(jack_port_t* port, const char* name)
 {
     JackGlobals::CheckContext("jack_port_unset_alias");
 
-    uintptr_t port_aux = (uintptr_t)port;
-    jack_port_id_t myport = (jack_port_id_t)port_aux;
+    port_info * port_aux = (port_info *)port;
+    jack_port_id_t myport = port_aux->index;
     if (!CheckPort(myport)) {
         jack_error("jack_port_unset_alias called with an incorrect port %ld", myport);
         return -1;
@@ -687,7 +697,7 @@ LIB_EXPORT int jack_port_unset_alias(jack_port_t* port, const char* name)
         jack_error("jack_port_unset_alias called with a NULL port name");
         return -1;
     } else {
-        JackGraphManager* manager = GetGraphManager();
+        JackGraphManager* manager = port_aux->client->GetGraphManager();
         return (manager ? manager->GetPort(myport)->UnsetAlias(name) : -1);
     }
 }
@@ -696,13 +706,13 @@ LIB_EXPORT int jack_port_get_aliases(const jack_port_t* port, char* const aliase
 {
     JackGlobals::CheckContext("jack_port_get_aliases");
 
-    uintptr_t port_aux = (uintptr_t)port;
-    jack_port_id_t myport = (jack_port_id_t)port_aux;
+    port_info * port_aux = (port_info *)port;
+    jack_port_id_t myport = port_aux->index;
     if (!CheckPort(myport)) {
         jack_error("jack_port_get_aliases called with an incorrect port %ld", myport);
         return -1;
     } else {
-        JackGraphManager* manager = GetGraphManager();
+        JackGraphManager* manager = port_aux->client->GetGraphManager();
         return (manager ? manager->GetPort(myport)->GetAliases(aliases) : -1);
     }
 }
@@ -711,13 +721,13 @@ LIB_EXPORT int jack_port_request_monitor(jack_port_t* port, int onoff)
 {
     JackGlobals::CheckContext("jack_port_request_monitor");
 
-    uintptr_t port_aux = (uintptr_t)port;
-    jack_port_id_t myport = (jack_port_id_t)port_aux;
+    port_info * port_aux = (port_info *)port;
+    jack_port_id_t myport = port_aux->index;
     if (!CheckPort(myport)) {
         jack_error("jack_port_request_monitor called with an incorrect port %ld", myport);
         return -1;
     } else {
-        JackGraphManager* manager = GetGraphManager();
+        JackGraphManager* manager = port_aux->client->GetGraphManager();
         return (manager ? manager->RequestMonitor(myport, onoff) : -1);
     }
 }
@@ -731,7 +741,7 @@ LIB_EXPORT int jack_port_request_monitor_by_name(jack_client_t* ext_client, cons
         jack_error("jack_port_request_monitor_by_name called with a NULL client");
         return -1;
     } else {
-        JackGraphManager* manager = GetGraphManager();
+        JackGraphManager* manager = client->GetGraphManager();
         if (!manager)
             return -1;
         jack_port_id_t myport = manager->GetPort(port_name);
@@ -748,13 +758,13 @@ LIB_EXPORT int jack_port_ensure_monitor(jack_port_t* port, int onoff)
 {
     JackGlobals::CheckContext("jack_port_ensure_monitor");
 
-    uintptr_t port_aux = (uintptr_t)port;
-    jack_port_id_t myport = (jack_port_id_t)port_aux;
+    port_info * port_aux = (port_info *)port;
+    jack_port_id_t myport = port_aux->index;
     if (!CheckPort(myport)) {
         jack_error("jack_port_ensure_monitor called with an incorrect port %ld", myport);
         return -1;
     } else {
-        JackGraphManager* manager = GetGraphManager();
+        JackGraphManager* manager = port_aux->client->GetGraphManager();
         return (manager ? manager->GetPort(myport)->EnsureMonitor(onoff) : -1);
     }
 }
@@ -763,13 +773,13 @@ LIB_EXPORT int jack_port_monitoring_input(jack_port_t* port)
 {
     JackGlobals::CheckContext("jack_port_monitoring_input");
 
-    uintptr_t port_aux = (uintptr_t)port;
-    jack_port_id_t myport = (jack_port_id_t)port_aux;
+    port_info * port_aux = (port_info *)port;
+    jack_port_id_t myport = port_aux->index;
     if (!CheckPort(myport)) {
         jack_error("jack_port_monitoring_input called with an incorrect port %ld", myport);
         return -1;
     } else {
-        JackGraphManager* manager = GetGraphManager();
+        JackGraphManager* manager = port_aux->client->GetGraphManager();
         return (manager ? manager->GetPort(myport)->MonitoringInput() : -1);
     }
 }
@@ -1088,7 +1098,19 @@ LIB_EXPORT jack_port_t* jack_port_register(jack_client_t* ext_client, const char
         jack_error("jack_port_register called with a NULL port name or a NULL port_type");
         return NULL;
     } else {
-        return (jack_port_t *)((uintptr_t)client->PortRegister(port_name, port_type, flags, buffer_size));
+        port_info * pi = ( port_info * )malloc( sizeof( port_info ) );
+        if( !pi ) {
+            jack_error("Memory allocation error...");
+            return NULL;
+        }
+        pi->client = client;
+        pi->index = client->PortRegister(port_name, port_type, flags, buffer_size);
+        if( !pi->index ) {
+            jack_error("Could not register port...");
+            free( pi );
+            return NULL;
+        }
+        return (jack_port_t *)(pi);
     }
 }
 
@@ -1101,13 +1123,18 @@ LIB_EXPORT int jack_port_unregister(jack_client_t* ext_client, jack_port_t* port
         jack_error("jack_port_unregister called with a NULL client");
         return -1;
     }
-    uintptr_t port_aux = (uintptr_t)port;
-    jack_port_id_t myport = (jack_port_id_t)port_aux;
+    port_info * port_aux = (port_info *)port;
+    jack_port_id_t myport = port_aux->index;
     if (!CheckPort(myport)) {
         jack_error("jack_port_unregister called with an incorrect port %ld", myport);
         return -1;
     }
-    return client->PortUnRegister(myport);
+    int ret_val = client->PortUnRegister(myport);
+    if( !ret_val ) {
+        /* zero means success, so destroy the port */
+        free( port_aux );
+    }
+    return ret_val;
 }
 
 LIB_EXPORT int jack_port_is_mine(const jack_client_t* ext_client, const jack_port_t* port)
@@ -1119,8 +1146,8 @@ LIB_EXPORT int jack_port_is_mine(const jack_client_t* ext_client, const jack_por
         jack_error("jack_port_is_mine called with a NULL client");
         return -1;
     }
-    uintptr_t port_aux = (uintptr_t)port;
-    jack_port_id_t myport = (jack_port_id_t)port_aux;
+    port_info * port_aux = (port_info *)port;
+    jack_port_id_t myport = port_aux->index;
     if (!CheckPort(myport)) {
         jack_error("jack_port_is_mine called with an incorrect port %ld", myport);
         return -1;
@@ -1132,14 +1159,14 @@ LIB_EXPORT const char** jack_port_get_connections(const jack_port_t* port)
 {
     JackGlobals::CheckContext("jack_port_get_connections");
 
-    uintptr_t port_aux = (uintptr_t)port;
-    jack_port_id_t myport = (jack_port_id_t)port_aux;
+    port_info * port_aux = (port_info *)port;
+    jack_port_id_t myport = port_aux->index;
     if (!CheckPort(myport)) {
         jack_error("jack_port_get_connections called with an incorrect port %ld", myport);
         return NULL;
     } else {
-        WaitGraphChange();
-        JackGraphManager* manager = GetGraphManager();
+        WaitGraphChange( port_aux->client );
+        JackGraphManager* manager = port_aux->client->GetGraphManager();
         return (manager ? manager->GetConnections(myport) : NULL);
     }
 }
@@ -1155,14 +1182,14 @@ LIB_EXPORT const char** jack_port_get_all_connections(const jack_client_t* ext_c
         return NULL;
     }
 
-    uintptr_t port_aux = (uintptr_t)port;
-    jack_port_id_t myport = (jack_port_id_t)port_aux;
+    port_info * port_aux = (port_info *)port;
+    jack_port_id_t myport = port_aux->index;
     if (!CheckPort(myport)) {
         jack_error("jack_port_get_all_connections called with an incorrect port %ld", myport);
         return NULL;
     } else {
-        WaitGraphChange();
-        JackGraphManager* manager = GetGraphManager();
+        WaitGraphChange( client );
+        JackGraphManager* manager = client->GetGraphManager();
         return (manager ? manager->GetConnections(myport) : NULL);
     }
 }
@@ -1177,14 +1204,14 @@ LIB_EXPORT jack_nframes_t jack_port_get_total_latency(jack_client_t* ext_client,
         return 0;
     }
 
-    uintptr_t port_aux = (uintptr_t)port;
-    jack_port_id_t myport = (jack_port_id_t)port_aux;
+    port_info * port_aux = (port_info *)port;
+    jack_port_id_t myport = port_aux->index;
     if (!CheckPort(myport)) {
         jack_error("jack_port_get_total_latency called with an incorrect port %ld", myport);
         return 0;
     } else {
-        WaitGraphChange();
-        JackGraphManager* manager = GetGraphManager();
+        WaitGraphChange( client );
+        JackGraphManager* manager = client->GetGraphManager();
         if (manager) {
             manager->ComputeTotalLatency(myport);
             return manager->GetPort(myport)->GetTotalLatency();
@@ -1235,8 +1262,8 @@ LIB_EXPORT int jack_port_disconnect(jack_client_t* ext_client, jack_port_t* src)
         jack_error("jack_port_disconnect called with a NULL client");
         return -1;
     }
-    uintptr_t port_aux = (uintptr_t)src;
-    jack_port_id_t myport = (jack_port_id_t)port_aux;
+    port_info * port_aux = (port_info *)src;
+    jack_port_id_t myport = port_aux->index;
     if (!CheckPort(myport)) {
         jack_error("jack_port_disconnect called with an incorrect port %ld", myport);
         return -1;
@@ -1281,7 +1308,7 @@ LIB_EXPORT const char** jack_get_ports(jack_client_t* ext_client, const char* po
         jack_error("jack_get_ports called with a NULL client");
         return NULL;
     }
-    JackGraphManager* manager = GetGraphManager();
+    JackGraphManager* manager = client->GetGraphManager();
     return (manager ? manager->GetPorts(port_name_pattern, type_name_pattern, flags) : NULL);
 }
 
@@ -1300,10 +1327,20 @@ LIB_EXPORT jack_port_t* jack_port_by_name(jack_client_t* ext_client, const char*
         return NULL;
     }
     
-    JackGraphManager* manager = GetGraphManager();
+    JackGraphManager* manager = client->GetGraphManager();
     if (manager) {
         int res = manager->GetPort(portname); // returns a port index at least > 1
-        return (res == NO_PORT) ? NULL : (jack_port_t*)((uintptr_t)res);
+        if( res == NO_PORT ) {
+            return NULL;
+        }
+        port_info * pi = ( port_info * )malloc( sizeof( port_info ) );
+        if( !pi ) {
+            jack_error("Memory allocation error...");
+            return NULL;
+        }
+        pi->client = client;
+        pi->index = res;
+        return (jack_port_t*)(pi);
     } else {
         return NULL;
     }
@@ -1313,8 +1350,20 @@ LIB_EXPORT jack_port_t* jack_port_by_id(jack_client_t* ext_client, jack_port_id_
 {
     JackGlobals::CheckContext("jack_port_by_id");
 
-    /* jack_port_t* type is actually the port index */
-    return (jack_port_t*)((uintptr_t)id);
+    JackClient* client = (JackClient*)ext_client;
+    if (client == NULL) {
+        jack_error("jack_port_by_id called with a NULL client");
+        return NULL;
+    }
+    port_info * pi = ( port_info * )malloc( sizeof( port_info ) );
+    if( !pi ) {
+        jack_error("Memory allocation error...");
+        return NULL;
+    }
+    pi->client = client;
+    pi->index = id;
+    /* jack_port_t* type is actually the port info structure */
+    return (jack_port_t*)(pi);
 }
 
 LIB_EXPORT int jack_engine_takeover_timebase(jack_client_t* ext_client)

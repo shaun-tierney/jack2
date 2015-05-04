@@ -36,8 +36,8 @@ class JackLibClient : public JackClient
 {
 
     private:
-
         JackShmReadWritePtr1<JackClientControl> fClientControl; /*! Shared client control */
+        JackShmReadWritePtr1<JackGraphManager> fGraphManager; /*! Shared graph manager */
 
     public:
 

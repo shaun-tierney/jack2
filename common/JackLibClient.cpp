@@ -28,15 +28,6 @@ namespace Jack
 {
 
 // Used for external C API (JackAPI.cpp)
-JackGraphManager* GetGraphManager()
-{
-    if (JackLibGlobals::fGlobals) {
-        return JackLibGlobals::fGlobals->fGraphManager;
-    } else {
-        return NULL;
-    }
-}
-
 JackEngineControl* GetEngineControl()
 {
     if (JackLibGlobals::fGlobals) {
@@ -120,7 +111,7 @@ int JackLibClient::Open(const char* server_name, const char* name, int uuid, jac
     try {
         // Map shared memory segments
         JackLibGlobals::fGlobals->fEngineControl.SetShmIndex(shared_engine, fServerName);
-        JackLibGlobals::fGlobals->fGraphManager.SetShmIndex(shared_graph, fServerName);
+        fGraphManager.SetShmIndex(shared_graph, fServerName);
         fClientControl.SetShmIndex(shared_client, fServerName);
         JackGlobals::fVerbose = GetEngineControl()->fVerbose;
     } catch (...) {
@@ -183,8 +174,7 @@ int JackLibClient::ClientNotifyImp(int refnum, const char* name, int notify, int
 
 JackGraphManager* JackLibClient::GetGraphManager() const
 {
-    assert(JackLibGlobals::fGlobals->fGraphManager);
-    return JackLibGlobals::fGlobals->fGraphManager;
+    return fGraphManager;
 }
 
 JackEngineControl* JackLibClient::GetEngineControl() const
