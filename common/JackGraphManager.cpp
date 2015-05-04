@@ -70,6 +70,11 @@ JackGraphManager::JackGraphManager(int port_max)
     fPortMax = port_max;
 }
 
+void JackGraphManager::SetEngineControl( JackEngineControl * engine ) {
+    JackConnectionManager* manager = ReadCurrentState();
+    manager->SetEngineControl( engine );
+}
+
 JackPort* JackGraphManager::GetPort(jack_port_id_t port_index)
 {
     AssertPort(port_index);

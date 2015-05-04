@@ -28,15 +28,6 @@ namespace Jack
 {
 
 // Used for external C API (JackAPI.cpp)
-JackEngineControl* GetEngineControl()
-{
-    if (JackLibGlobals::fGlobals) {
-        return JackLibGlobals::fGlobals->fEngineControl;
-    } else {
-        return NULL;
-    }
-}
-
 JackSynchro* GetSynchroTable()
 {
     return (JackLibGlobals::fGlobals ? JackLibGlobals::fGlobals->fSynchroTable : 0);
@@ -110,7 +101,7 @@ int JackLibClient::Open(const char* server_name, const char* name, int uuid, jac
 
     try {
         // Map shared memory segments
-        JackLibGlobals::fGlobals->fEngineControl.SetShmIndex(shared_engine, fServerName);
+        fEngineControl.SetShmIndex(shared_engine, fServerName);
         fGraphManager.SetShmIndex(shared_graph, fServerName);
         fClientControl.SetShmIndex(shared_client, fServerName);
         JackGlobals::fVerbose = GetEngineControl()->fVerbose;
@@ -179,8 +170,7 @@ JackGraphManager* JackLibClient::GetGraphManager() const
 
 JackEngineControl* JackLibClient::GetEngineControl() const
 {
-    assert(JackLibGlobals::fGlobals->fEngineControl);
-    return JackLibGlobals::fGlobals->fEngineControl;
+    return fEngineControl;
 }
 
 JackClientControl* JackLibClient::GetClientControl() const

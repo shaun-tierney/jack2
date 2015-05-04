@@ -321,7 +321,7 @@ static inline void WaitGraphChange( JackClient * client )
 
     if (jack_tls_get(JackGlobals::fRealTimeThread) == NULL) {
         JackGraphManager* manager = client->GetGraphManager();
-        JackEngineControl* control = GetEngineControl();
+        JackEngineControl* control = client->GetEngineControl();
         assert(manager);
         assert(control);
         if (manager->IsPendingChange()) {
@@ -793,7 +793,7 @@ LIB_EXPORT int jack_is_realtime(jack_client_t* ext_client)
         jack_error("jack_is_realtime called with a NULL client");
         return -1;
     } else {
-        JackEngineControl* control = GetEngineControl();
+        JackEngineControl* control = client->GetEngineControl();
         return (control ? control->fRealTime : -1);
     }
 }
@@ -1280,7 +1280,7 @@ LIB_EXPORT jack_nframes_t jack_get_sample_rate(jack_client_t* ext_client)
         jack_error("jack_get_sample_rate called with a NULL client");
         return 0;
     } else {
-        JackEngineControl* control = GetEngineControl();
+        JackEngineControl* control = client->GetEngineControl();
         return (control ? control->fSampleRate : 0);
     }
 }
@@ -1294,7 +1294,7 @@ LIB_EXPORT jack_nframes_t jack_get_buffer_size(jack_client_t* ext_client)
         jack_error("jack_get_buffer_size called with a NULL client");
         return 0;
     } else {
-        JackEngineControl* control = GetEngineControl();
+        JackEngineControl* control = client->GetEngineControl();
         return (control ? control->fBufferSize : 0);
     }
 }
@@ -1385,7 +1385,12 @@ LIB_EXPORT jack_nframes_t jack_frames_since_cycle_start(const jack_client_t* ext
     JackGlobals::CheckContext("jack_frames_since_cycle_start");
 
     JackTimer timer;
-    JackEngineControl* control = GetEngineControl();
+    JackClient* client = (JackClient*)ext_client;
+    if (client == NULL) {
+        jack_error("jack_frames_since_cycle_start called with a NULL client");
+        return -1;
+    }
+    JackEngineControl* control = client->GetEngineControl();
     if (control) {
         control->ReadFrameTime(&timer);
         return timer.FramesSinceCycleStart(GetMicroSeconds(), control->fSampleRate);
@@ -1411,7 +1416,7 @@ LIB_EXPORT jack_time_t jack_frames_to_time(const jack_client_t* ext_client, jack
         return 0;
     } else {
         JackTimer timer;
-        JackEngineControl* control = GetEngineControl();
+        JackEngineControl* control = client->GetEngineControl();
         if (control) {
             control->ReadFrameTime(&timer);
             return timer.Frames2Time(frames, control->fBufferSize);
@@ -1431,7 +1436,7 @@ LIB_EXPORT jack_nframes_t jack_time_to_frames(const jack_client_t* ext_client, j
         return 0;
     } else {
         JackTimer timer;
-        JackEngineControl* control = GetEngineControl();
+        JackEngineControl* control = client->GetEngineControl();
         if (control) {
             control->ReadFrameTime(&timer);
             return timer.Time2Frames(usecs, control->fBufferSize);
@@ -1452,7 +1457,12 @@ LIB_EXPORT jack_nframes_t jack_last_frame_time(const jack_client_t* ext_client)
 {
     JackGlobals::CheckContext("jack_last_frame_time");
 
-    JackEngineControl* control = GetEngineControl();
+    JackClient* client = (JackClient*)ext_client;
+    if (client == NULL) {
+        jack_error("jack_last_frame_time called with a NULL client");
+        return 0;
+    }
+    JackEngineControl* control = client->GetEngineControl();
     return (control) ? control->fFrameTimer.ReadCurrentState()->CurFrame() : 0;
 }
 
@@ -1464,7 +1474,12 @@ LIB_EXPORT int jack_get_cycle_times(const jack_client_t *client,
 {
     JackGlobals::CheckContext("jack_get_cycle_times");
 
-    JackEngineControl* control = GetEngineControl();
+    JackClient* ourclient = (JackClient*)client;
+    if (ourclient == NULL) {
+        jack_error("jack_last_frame_time called with a NULL client");
+        return -1;
+    }
+    JackEngineControl* control = ourclient->GetEngineControl();
     if (control) {
         JackTimer timer;
         control->ReadFrameTime(&timer);
@@ -1483,7 +1498,7 @@ LIB_EXPORT float jack_cpu_load(jack_client_t* ext_client)
         jack_error("jack_cpu_load called with a NULL client");
         return 0.0f;
     } else {
-        JackEngineControl* control = GetEngineControl();
+        JackEngineControl* control = client->GetEngineControl();
         return (control ? control->fCPULoad : 0.0f);
     }
 }
@@ -1542,6 +1557,8 @@ LIB_EXPORT size_t jack_port_type_get_buffer_size(jack_client_t* ext_client, cons
         if (port_id == PORT_TYPES_MAX) {
             jack_error("jack_port_type_get_buffer_size called with an unknown port type = %s", port_type);
             return 0;
+        } else if ( port_id == 0 ) {
+            return ( client->GetEngineControl()->fBufferSize * sizeof( jack_default_audio_sample_t ) );
         } else {
             return GetPortType(port_id)->size();
         }
@@ -1708,7 +1725,7 @@ LIB_EXPORT float jack_get_max_delayed_usecs(jack_client_t* ext_client)
         jack_error("jack_get_max_delayed_usecs called with a NULL client");
         return 0.f;
     } else {
-        JackEngineControl* control = GetEngineControl();
+        JackEngineControl* control = client->GetEngineControl();
         return (control ? control->fMaxDelayedUsecs : 0.f);
     }
  }
@@ -1722,7 +1739,7 @@ LIB_EXPORT float jack_get_xrun_delayed_usecs(jack_client_t* ext_client)
         jack_error("jack_get_xrun_delayed_usecs called with a NULL client");
         return 0.f;
     } else {
-        JackEngineControl* control = GetEngineControl();
+        JackEngineControl* control = client->GetEngineControl();
         return (control ? control->fXrunDelayedUsecs : 0.f);
     }
 }
@@ -1735,7 +1752,7 @@ LIB_EXPORT void jack_reset_max_delayed_usecs(jack_client_t* ext_client)
     if (client == NULL) {
         jack_error("jack_reset_max_delayed_usecs called with a NULL client");
     } else {
-        JackEngineControl* control = GetEngineControl();
+        JackEngineControl* control = client->GetEngineControl();
         control->ResetXRun();
     }
 }
@@ -1750,7 +1767,7 @@ LIB_EXPORT int jack_client_real_time_priority(jack_client_t* ext_client)
         jack_error("jack_client_real_time_priority called with a NULL client");
         return -1;
     } else {
-        JackEngineControl* control = GetEngineControl();
+        JackEngineControl* control = client->GetEngineControl();
         return (control->fRealTime) ? control->fClientPriority : -1;
     }
 }
@@ -1764,14 +1781,15 @@ LIB_EXPORT int jack_client_max_real_time_priority(jack_client_t* ext_client)
         jack_error("jack_client_max_real_time_priority called with a NULL client");
         return -1;
     } else {
-        JackEngineControl* control = GetEngineControl();
+        JackEngineControl* control = client->GetEngineControl();
         return (control->fRealTime) ? control->fMaxClientPriority : -1;
     }
 }
 
 LIB_EXPORT int jack_acquire_real_time_scheduling(jack_native_thread_t thread, int priority)
 {
-    JackEngineControl* control = GetEngineControl();
+    // TODO:  Revisit this.
+    JackEngineControl* control = NULL;//GetEngineControl();
     return (control
         ? JackThread::AcquireRealTimeImp(thread, priority, control->fPeriod, control->fComputation, control->fConstraint)
         : -1);
@@ -1786,7 +1804,12 @@ LIB_EXPORT int jack_client_create_thread(jack_client_t* client,
 {
     JackGlobals::CheckContext("jack_client_create_thread");
 
-    JackEngineControl* control = GetEngineControl();
+    JackClient* ourclient = (JackClient*)client;
+    if (ourclient == NULL) {
+        jack_error("jack_last_frame_time called with a NULL client");
+        return -1;
+    }
+    JackEngineControl* control = ourclient->GetEngineControl();
     int res = JackThread::StartImp(thread, priority, realtime, routine, arg);
     return (res == 0)
         ? ((realtime ? JackThread::AcquireRealTimeImp(*thread, priority, control->fPeriod, control->fComputation, control->fConstraint) : res))

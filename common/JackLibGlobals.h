@@ -52,7 +52,6 @@ class JackClient;
 
 struct JackLibGlobals
 {
-    JackShmReadWritePtr<JackEngineControl> fEngineControl;	/*! Shared engine control */  // transport engine has to be writable
     JackSynchro fSynchroTable[CLIENT_NUM];                  /*! Shared synchro table */
     sigset_t fProcessSignals;
 
@@ -65,7 +64,6 @@ struct JackLibGlobals
         if (!JackMessageBuffer::Create()) {
             jack_error("Cannot create message buffer");
         }
-        fEngineControl = -1;
 
         // Filter SIGPIPE to avoid having client get a SIGPIPE when trying to access a died server.
     #ifdef WIN32

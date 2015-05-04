@@ -37,7 +37,8 @@ class JackLibClient : public JackClient
 
     private:
         JackShmReadWritePtr1<JackClientControl> fClientControl; /*! Shared client control */
-        JackShmReadWritePtr1<JackGraphManager> fGraphManager; /*! Shared graph manager */
+        JackShmReadWritePtr<JackGraphManager> fGraphManager; /*! Shared graph manager */
+        JackShmReadWritePtr<JackEngineControl> fEngineControl;	/*! Shared engine control */  // transport engine has to be writable
 
     public:
 

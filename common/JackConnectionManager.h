@@ -419,6 +419,7 @@ class SERVER_EXPORT JackConnectionManager
         JackFixedMatrix<CLIENT_NUM> fConnectionRef;						/*! Table of port connections by (refnum , refnum) */
         JackActivationCount fInputCounter[CLIENT_NUM];					/*! Activation counter per refnum */
         JackLoopFeedback<CONNECTION_NUM_FOR_PORT> fLoopFeedback;		/*! Loop feedback connections */
+        JackEngineControl * fEngineControl;
 
         bool IsLoopPathAux(int ref1, int ref2) const;
 
@@ -426,6 +427,8 @@ class SERVER_EXPORT JackConnectionManager
 
         JackConnectionManager();
         ~JackConnectionManager();
+
+        void SetEngineControl( JackEngineControl * engine );
 
         // Connections management
         int Connect(jack_port_id_t port_src, jack_port_id_t port_dst);

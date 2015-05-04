@@ -61,6 +61,7 @@ class SERVER_EXPORT JackGraphManager : public JackShmMem, public JackAtomicState
         ~JackGraphManager()
         {}
 
+        void SetEngineControl( JackEngineControl * engine );
         void SetBufferSize(jack_nframes_t buffer_size);
 
         // Ports management

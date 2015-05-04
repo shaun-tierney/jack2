@@ -88,13 +88,14 @@ We have:
 */
 
 class JackClientInterface;
+class JackEngineControl;
 
 PRE_PACKED_STRUCTURE
 class SERVER_EXPORT JackTransportEngine : public JackAtomicArrayState<jack_position_t>
 {
 
     private:
-
+        JackEngineControl * fEngineControl;
         jack_transport_state_t fTransportState;
         volatile transport_command_t fTransportCmd;
         transport_command_t fPreviousCmd;		/* previous transport_cmd */
@@ -115,7 +116,7 @@ class SERVER_EXPORT JackTransportEngine : public JackAtomicArrayState<jack_posit
 
     public:
 
-        JackTransportEngine();
+        JackTransportEngine( JackEngineControl * engine );
 
         ~JackTransportEngine()
         {}

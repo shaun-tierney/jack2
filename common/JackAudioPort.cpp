@@ -130,7 +130,7 @@ static void AudioBufferMixdown(void* mixbuffer, void** src_buffers, int src_coun
 
 static size_t AudioBufferSize()
 {
-    return GetEngineControl()->fBufferSize * sizeof(jack_default_audio_sample_t);
+    return 0;//GetEngineControl()->fBufferSize * sizeof(jack_default_audio_sample_t);
 }
 
 const JackPortType gAudioPortType =

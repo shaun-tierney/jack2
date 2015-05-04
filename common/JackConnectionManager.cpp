@@ -30,6 +30,7 @@ namespace Jack
 {
 
 JackConnectionManager::JackConnectionManager()
+    : fEngineControl( NULL )
 {
     int i;
     jack_log("JackConnectionManager::InitConnections size = %ld ", sizeof(JackConnectionManager));
@@ -57,7 +58,7 @@ bool JackConnectionManager::IsLoopPathAux(int ref1, int ref2) const
 {
     jack_log("JackConnectionManager::IsLoopPathAux ref1 = %ld ref2 = %ld", ref1, ref2);
 
-    if (ref1 < GetEngineControl()->fDriverNum || ref2 < GetEngineControl()->fDriverNum) {
+    if (ref1 < fEngineControl->fDriverNum || ref2 < fEngineControl->fDriverNum) {
         return false;
     } else if (ref1 == ref2) {	// Same refnum
         return true;
@@ -81,6 +82,9 @@ bool JackConnectionManager::IsLoopPathAux(int ref1, int ref2) const
 //--------------
 // External API
 //--------------
+void JackConnectionManager::SetEngineControl( JackEngineControl * engine ) {
+    fEngineControl = engine;
+}
 
 /*!
 \brief Connect port_src to port_dst.

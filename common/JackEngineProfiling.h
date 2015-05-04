@@ -103,6 +103,7 @@ struct JackTimingMeasure
 */
 
 class JackClientInterface;
+class JackEngineControl;
 class JackGraphManager;
 
 PRE_PACKED_STRUCTURE
@@ -116,12 +117,13 @@ class SERVER_EXPORT JackEngineProfiling
          
         unsigned int fAudioCycle;
         unsigned int fMeasuredClient;
+        JackEngineControl * fEngineControl;
         
         bool CheckClient(const char* name, int cur_point);
         
     public:
     
-        JackEngineProfiling();
+        JackEngineProfiling( JackEngineControl * engine );
         ~JackEngineProfiling();
    
         void Profile(JackClientInterface** table, 
