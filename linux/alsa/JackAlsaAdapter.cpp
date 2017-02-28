@@ -89,6 +89,17 @@ namespace Jack
             }
         }
 
+        // Ignore channels for interfaces if we didn't explicitly set both
+        // playback and capture but we set at least one of them.
+        if ( !fAudioInterface.fCaptureName && fAudioInterface.fPlaybackName )
+        {
+            fCaptureChannels = 0;
+        }
+        if ( fAudioInterface.fCaptureName && !fAudioInterface.fPlaybackName )
+        {
+            fPlaybackChannels = 0;
+        }
+
         fAudioInterface.setInputs ( fCaptureChannels );
         fAudioInterface.setOutputs ( fPlaybackChannels );
     }
