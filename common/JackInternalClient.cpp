@@ -117,23 +117,6 @@ void JackInternalClient::ShutDown(jack_status_t code, const char* message)
     JackClient::ShutDown(code, message);
 }
 
-int JackInternalClient::Activate()
-{
-#ifdef __linux__
-    fSynchroTable[fClientControl.fRefNum].MakePrivate(true);
-#endif
-    return JackClient::Activate();
-}
-
-int JackInternalClient::Deactivate()
-{
-    const int ret = JackClient::Deactivate();
-#ifdef __linux__
-    fSynchroTable[fClientControl.fRefNum].MakePrivate(false);
-#endif
-    return ret;
-}
-
 JackGraphManager* JackInternalClient::GetGraphManager() const
 {
     assert(fGraphManager);
