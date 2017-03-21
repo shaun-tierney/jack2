@@ -53,12 +53,13 @@ bool JackLinuxFutex::Signal()
         return true;
     }
 
-    if (! __sync_bool_compare_and_swap(fFutex, 0, 1)) {
+    if (! __sync_bool_compare_and_swap(&fFutex->futex, 0, 1))
+    {
         // already unlocked, do not wake futex
-        return true;
+        if (! fFutex->internal) return true;
     }
 
-    ::syscall(__NR_futex, fFutex, fPrivate ? FUTEX_WAKE_PRIVATE : FUTEX_WAKE, 1, NULL, NULL, 0);
+    ::syscall(__NR_futex, fFutex, fFutex->internal ? FUTEX_WAKE_PRIVATE : FUTEX_WAKE, 1, NULL, NULL, 0);
     return true;
 }
 
@@ -74,12 +75,18 @@ bool JackLinuxFutex::Wait()
         return false;
     }
 
+    if (fFutex->needsChange)
+    {
+        fFutex->needsChange = false;
+        fFutex->internal = !fFutex->internal;
+    }
+
     for (;;)
     {
-        if (__sync_bool_compare_and_swap(fFutex, 1, 0))
+        if (__sync_bool_compare_and_swap(&fFutex->futex, 1, 0))
             return true;
 
-        if (::syscall(__NR_futex, fFutex, fPrivate ? FUTEX_WAIT_PRIVATE : FUTEX_WAIT, 0, NULL, NULL, 0) != 0 && errno != EWOULDBLOCK)
+        if (::syscall(__NR_futex, fFutex, fFutex->internal ? FUTEX_WAIT_PRIVATE : FUTEX_WAIT, 0, NULL, NULL, 0) != 0 && errno != EWOULDBLOCK)
             return false;
     }
 }
@@ -91,6 +98,12 @@ bool JackLinuxFutex::TimedWait(long usec)
         return false;
      }
 
+    if (fFutex->needsChange)
+    {
+        fFutex->needsChange = false;
+        fFutex->internal = !fFutex->internal;
+    }
+
     const uint secs  =  usec / 1000000;
     const int  nsecs = (usec % 1000000) * 1000;
 
@@ -98,16 +111,16 @@ bool JackLinuxFutex::TimedWait(long usec)
 
     for (;;)
     {
-        if (__sync_bool_compare_and_swap(fFutex, 1, 0))
+        if (__sync_bool_compare_and_swap(&fFutex->futex, 1, 0))
             return true;
 
-        if (::syscall(__NR_futex, fFutex, fPrivate ? FUTEX_WAIT_PRIVATE : FUTEX_WAIT, 0, &timeout, NULL, 0) != 0 && errno != EWOULDBLOCK)
+        if (::syscall(__NR_futex, fFutex, fFutex->internal ? FUTEX_WAIT_PRIVATE : FUTEX_WAIT, 0, &timeout, NULL, 0) != 0 && errno != EWOULDBLOCK)
             return false;
     }
 }
 
 // Server side : publish the futex in the global namespace
-bool JackLinuxFutex::Allocate(const char* name, const char* server_name, int value)
+bool JackLinuxFutex::Allocate(const char* name, const char* server_name, int value, bool internal)
 {
     BuildName(name, server_name, fName, sizeof(fName));
     jack_log("JackLinuxFutex::Allocate name = %s val = %ld", fName, value);
@@ -117,9 +130,9 @@ bool JackLinuxFutex::Allocate(const char* name, const char* server_name, int val
         return false;
     }
 
-    ftruncate(fSharedMem, sizeof(int));
+    ftruncate(fSharedMem, sizeof(FutexData));
 
-    if ((fFutex = (int*)mmap(NULL, sizeof(int), PROT_READ|PROT_WRITE, MAP_SHARED|MAP_LOCKED, fSharedMem, 0)) == NULL) {
+    if ((fFutex = (FutexData*)mmap(NULL, sizeof(FutexData), PROT_READ|PROT_WRITE, MAP_SHARED|MAP_LOCKED, fSharedMem, 0)) == NULL) {
         jack_error("Allocate: can't check in named futex name = %s err = %s", fName, strerror(errno));
         close(fSharedMem);
         fSharedMem = -1;
@@ -127,12 +140,18 @@ bool JackLinuxFutex::Allocate(const char* name, const char* server_name, int val
         return false;
     }
 
-    *fFutex = value;
+    fPrivate = internal;
+
+    fFutex->futex = value;
+    fFutex->internal = internal;
+    fFutex->wasInternal = internal;
+    fFutex->needsChange = false;
+    fFutex->externalCount = 0;
     return true;
 }
 
 // Client side : get the published futex from server
-bool JackLinuxFutex::ConnectInput(const char* name, const char* server_name)
+bool JackLinuxFutex::Connect(const char* name, const char* server_name)
 {
     BuildName(name, server_name, fName, sizeof(fName));
     jack_log("JackLinuxFutex::Connect name = %s", fName);
@@ -148,24 +167,35 @@ bool JackLinuxFutex::ConnectInput(const char* name, const char* server_name)
         return false;
     }
 
-    if ((fFutex = (int*)mmap(NULL, sizeof(int), PROT_READ|PROT_WRITE, MAP_SHARED|MAP_LOCKED, fSharedMem, 0)) == NULL) {
+    if ((fFutex = (FutexData*)mmap(NULL, sizeof(FutexData), PROT_READ|PROT_WRITE, MAP_SHARED|MAP_LOCKED, fSharedMem, 0)) == NULL) {
         jack_error("Connect: can't connect named futex name = %s err = %s", fName, strerror(errno));
         close(fSharedMem);
         fSharedMem = -1;
         return false;
     }
 
+    if (! fPrivate && fFutex->wasInternal)
+    {
+        const char* externalSync = getenv("JACK_INTERNAL_CLIENT_SYNC");
+
+        if (externalSync != NULL && strstr(fName, externalSync) != NULL && ++fFutex->externalCount == 1)
+        {
+            jack_error("Note: client %s running as external client temporarily", fName);
+            fFutex->needsChange = true;
+        }
+    }
+
     return true;
 }
 
-bool JackLinuxFutex::Connect(const char* name, const char* server_name)
+bool JackLinuxFutex::ConnectInput(const char* name, const char* server_name)
 {
-    return ConnectInput(name, server_name);
+    return Connect(name, server_name);
 }
 
 bool JackLinuxFutex::ConnectOutput(const char* name, const char* server_name)
 {
-    return ConnectInput(name, server_name);
+    return Connect(name, server_name);
 }
 
 bool JackLinuxFutex::Disconnect()
@@ -174,7 +204,18 @@ bool JackLinuxFutex::Disconnect()
         return true;
     }
 
-    munmap(fFutex, sizeof(int));
+    if (! fPrivate && fFutex->wasInternal)
+    {
+        const char* externalSync = getenv("JACK_INTERNAL_CLIENT_SYNC");
+
+        if (externalSync != NULL && strstr(fName, externalSync) != NULL && --fFutex->externalCount == 0)
+        {
+            jack_error("Note: client %s now running as internal client again", fName);
+            fFutex->needsChange = true;
+        }
+    }
+
+    munmap(fFutex, sizeof(FutexData));
     fFutex = NULL;
 
     close(fSharedMem);
@@ -189,18 +230,13 @@ void JackLinuxFutex::Destroy()
         return;
     }
 
-    munmap(fFutex, sizeof(int));
+    munmap(fFutex, sizeof(FutexData));
     fFutex = NULL;
 
     close(fSharedMem);
     fSharedMem = -1;
 
     shm_unlink(fName);
-}
-
-void JackLinuxFutex::MakePrivate(bool priv)
-{
-    fPrivate = priv;
 }
 
 } // end of namespace

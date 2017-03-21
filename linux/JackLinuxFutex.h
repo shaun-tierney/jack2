@@ -42,9 +42,16 @@ class SERVER_EXPORT JackLinuxFutex : public detail::JackSynchro
 {
 
     private:
+        struct FutexData {
+            int futex;         // futex, needs to be 1st member
+            bool internal;     // current internal state
+            bool wasInternal;  // initial internal state, only changes in allocate
+            bool needsChange;  // change state on next wait call
+            int externalCount; // how many external clients have connected
+        };
 
         int fSharedMem;
-        int* fFutex;
+        FutexData* fFutex;
         bool fPrivate;
 
     protected:
@@ -61,7 +68,7 @@ class SERVER_EXPORT JackLinuxFutex : public detail::JackSynchro
         bool Wait();
         bool TimedWait(long usec);
 
-        bool Allocate(const char* name, const char* server_name, int value);
+        bool Allocate(const char* name, const char* server_name, int value, bool internal = false);
         bool Connect(const char* name, const char* server_name);
         bool ConnectInput(const char* name, const char* server_name);
         bool ConnectOutput(const char* name, const char* server_name);

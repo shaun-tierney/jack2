@@ -49,9 +49,6 @@ class JackInternalClient : public JackClient
         int Open(const char* server_name, const char* name, int uuid, jack_options_t options, jack_status_t* status);
         void ShutDown(jack_status_t code, const char* message);
 
-        virtual int Activate();
-        virtual int Deactivate();
-
         JackGraphManager* GetGraphManager() const;
         JackEngineControl* GetEngineControl() const;
         JackClientControl* GetClientControl() const;
