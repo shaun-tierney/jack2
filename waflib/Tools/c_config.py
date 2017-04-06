@@ -6,7 +6,7 @@
 C/C++/D configuration helpers
 """
 
-import os, re, shlex, sys
+import os, re, shlex
 from waflib import Build, Utils, Task, Options, Logs, Errors, Runner
 from waflib.TaskGen import after_method, feature
 from waflib.Configure import conf
@@ -25,10 +25,10 @@ cfg_ver = {
 
 SNIP_FUNCTION = '''
 int main(int argc, char **argv) {
-	void *p;
+	void (*p)();
 	(void)argc; (void)argv;
-	p=(void*)(%s);
-	return (int)p;
+	p=(void(*)())(%s);
+	return !p;
 }
 '''
 """Code template for checking for functions"""
@@ -288,11 +288,11 @@ def exec_cfg(self, kw):
 	"""
 
 	path = Utils.to_list(kw['path'])
-
+	env = self.env.env or None
 	def define_it():
 		pkgname = kw.get('uselib_store', kw['package'].upper())
 		if kw.get('global_define'):
-			# compatibility
+			# compatibility, replace by pkgname in WAF 1.9?
 			self.define(self.have_define(kw['package']), 1, False)
 		else:
 			self.env.append_unique('DEFINES_%s' % pkgname, "%s=1" % self.have_define(pkgname))
@@ -301,7 +301,7 @@ def exec_cfg(self, kw):
 	# pkg-config version
 	if 'atleast_pkgconfig_version' in kw:
 		cmd = path + ['--atleast-pkgconfig-version=%s' % kw['atleast_pkgconfig_version']]
-		self.cmd_and_log(cmd)
+		self.cmd_and_log(cmd, env=env)
 		if not 'okmsg' in kw:
 			kw['okmsg'] = 'yes'
 		return
@@ -310,7 +310,7 @@ def exec_cfg(self, kw):
 	for x in cfg_ver:
 		y = x.replace('-', '_')
 		if y in kw:
-			self.cmd_and_log(path + ['--%s=%s' % (x, kw[y]), kw['package']])
+			self.cmd_and_log(path + ['--%s=%s' % (x, kw[y]), kw['package']], env=env)
 			if not 'okmsg' in kw:
 				kw['okmsg'] = 'yes'
 			define_it()
@@ -318,7 +318,7 @@ def exec_cfg(self, kw):
 
 	# retrieving the version of a module
 	if 'modversion' in kw:
-		version = self.cmd_and_log(path + ['--modversion', kw['modversion']]).strip()
+		version = self.cmd_and_log(path + ['--modversion', kw['modversion']], env=env).strip()
 		self.define('%s_VERSION' % Utils.quote_define_name(kw.get('uselib_store', kw['modversion'])), version)
 		return version
 
@@ -342,19 +342,19 @@ def exec_cfg(self, kw):
 
 	# retrieving variables of a module
 	if 'variables' in kw:
-		env = kw.get('env', self.env)
+		v = kw.get('env', self.env)
 		uselib = kw.get('uselib_store', kw['package'].upper())
 		vars = Utils.to_list(kw['variables'])
 		for v in vars:
-			val = self.cmd_and_log(lst + ['--variable=' + v]).strip()
+			val = self.cmd_and_log(lst + ['--variable=' + v], env=env).strip()
 			var = '%s_%s' % (uselib, v)
-			env[var] = val
+			v[var] = val
 		if not 'okmsg' in kw:
 			kw['okmsg'] = 'yes'
 		return
 
 	# so we assume the command-line will output flags to be parsed afterwards
-	ret = self.cmd_and_log(lst)
+	ret = self.cmd_and_log(lst, env=env)
 	if not 'okmsg' in kw:
 		kw['okmsg'] = 'yes'
 
@@ -383,7 +383,9 @@ def check_cfg(self, *k, **kw):
 			conf.check_cfg(path='sdl-config', args='--cflags --libs', package='', uselib_store='SDL')
 			conf.check_cfg(path='mpicc', args='--showme:compile --showme:link',
 				package='', uselib_store='OPEN_MPI', mandatory=False)
-
+			# variables
+			conf.check_cfg(package='gtk+-2.0', variables=['includedir', 'prefix'], uselib_store='FOO')
+			print(conf.env.FOO_includedir)
 	"""
 	if k:
 		lst = k[0].split()
@@ -480,7 +482,10 @@ def validate_c(self, kw):
 		kw['type'] = 'cprogram'
 
 	if not 'features' in kw:
-		kw['features'] = [kw['compile_mode'], kw['type']] # "cprogram c"
+		if not 'header_name' in kw or kw.get('link_header_test', True):
+			kw['features'] = [kw['compile_mode'], kw['type']] # "c ccprogram"
+		else:
+			kw['features'] = [kw['compile_mode']]
 	else:
 		kw['features'] = Utils.to_list(kw['features'])
 
@@ -587,6 +592,7 @@ def validate_c(self, kw):
 		kw['execute'] = False
 	if kw['execute']:
 		kw['features'].append('test_exec')
+		kw['chmod'] = 493
 
 	if not 'errmsg' in kw:
 		kw['errmsg'] = 'not found'
@@ -600,6 +606,11 @@ def validate_c(self, kw):
 	# if there are headers to append automatically to the next tests
 	if self.env[INCKEYS]:
 		kw['code'] = '\n'.join(['#include <%s>' % x for x in self.env[INCKEYS]]) + '\n' + kw['code']
+
+	# in case defines lead to very long command-lines
+	if kw.get('merge_config_header', False) or env.merge_config_header:
+		kw['code'] = '%s\n\n%s' % (self.get_config_header(), kw['code'])
+		env.DEFINES = [] # modify the copy
 
 	if not kw.get('success'): kw['success'] = None
 
@@ -623,7 +634,7 @@ def post_check(self, *k, **kw):
 		is_success = (kw['success'] == 0)
 
 	if 'define_name' in kw:
-		# TODO simplify?
+		# TODO simplify!
 		if 'header_name' in kw or 'function_name' in kw or 'type_name' in kw or 'fragment' in kw:
 			if kw['execute'] and kw.get('define_ret', None) and isinstance(is_success, str):
 				self.define(kw['define_name'], is_success, quote=kw.get('quote', 1))
@@ -631,6 +642,10 @@ def post_check(self, *k, **kw):
 				self.define_cond(kw['define_name'], is_success)
 		else:
 			self.define_cond(kw['define_name'], is_success)
+
+		# consistency with check_cfg
+		if kw.get('global_define', None):
+			self.env[kw['define_name']] = is_success
 
 	if 'header_name' in kw:
 		if kw.get('auto_add_header_name', False):
@@ -661,6 +676,16 @@ def check(self, *k, **kw):
 	Perform a configuration test by calling :py:func:`waflib.Configure.run_build`.
 	For the complete list of parameters, see :py:func:`waflib.Tools.c_config.validate_c`.
 	To force a specific compiler, pass "compiler='c'" or "compiler='cxx'" in the arguments
+
+	Besides build targets, complete builds can be given though a build function. All files will
+	be written to a temporary directory::
+
+		def build(bld):
+			lib_node = bld.srcnode.make_node('libdir/liblc1.c')
+			lib_node.parent.mkdir()
+			lib_node.write('#include <stdio.h>\\nint lib_func(void) { FILE *f = fopen("foo", "r");}\\n', 'w')
+			bld(features='c cshlib', source=[lib_node], linkflags=conf.env.EXTRA_LDFLAGS, target='liblc')
+		conf.check(build_fun=build, msg=msg)
 	"""
 	self.validate_c(kw)
 	self.start_msg(kw['msg'], **kw)
@@ -855,7 +880,10 @@ def write_config_header(self, configfile='', guard='', top=False, defines=True, 
 			cnf.define('A', 1)
 			cnf.write_config_header('config.h')
 
-	:param configfile: relative path to the file to create
+	This function only adds include guards (if necessary), consult
+	:py:func:`waflib.Tools.c_config.get_config_header` for details on the body.
+
+	:param configfile: path to the file to create (relative or absolute)
 	:type configfile: string
 	:param guard: include guard name to add, by default it is computed from the file name
 	:type guard: string
@@ -884,7 +912,7 @@ def write_config_header(self, configfile='', guard='', top=False, defines=True, 
 
 	node.write('\n'.join(lst))
 
-	# config files are not removed on "waf clean"
+	# config files must not be removed on "waf clean"
 	self.env.append_unique(Build.CFG_FILES, [node.abspath()])
 
 	if remove:
@@ -898,9 +926,16 @@ def get_config_header(self, defines=True, headers=False, define_prefix=''):
 	Create the contents of a ``config.h`` file from the defines and includes
 	set in conf.env.define_key / conf.env.include_key. No include guards are added.
 
+	A prelude will be added from the variable env.WAF_CONFIG_H_PRELUDE if provided. This
+	can be used to insert complex macros or include guards::
+
+		def configure(conf):
+			conf.env.WAF_CONFIG_H_PRELUDE = '#include <unistd.h>\\n'
+			conf.write_config_header('config.h')
+
 	:param defines: write the defines values
 	:type defines: bool
-	:param headers: write the headers
+	:param headers: write include entries for each element in self.env.INCKEYS
 	:type headers: bool
 	:type define_prefix: string
 	:param define_prefix: prefix all the defines with a particular prefix
@@ -908,6 +943,10 @@ def get_config_header(self, defines=True, headers=False, define_prefix=''):
 	:rtype: string
 	"""
 	lst = []
+
+	if self.env.WAF_CONFIG_H_PRELUDE:
+		lst.append(self.env.WAF_CONFIG_H_PRELUDE)
+
 	if headers:
 		for x in self.env[INCKEYS]:
 			lst.append('#include <%s>' % x)
@@ -931,24 +970,24 @@ def cc_add_flags(conf):
 	"""
 	Add CFLAGS / CPPFLAGS from os.environ to conf.env
 	"""
-	conf.add_os_flags('CPPFLAGS', 'CFLAGS')
-	conf.add_os_flags('CFLAGS')
+	conf.add_os_flags('CPPFLAGS', dup=False)
+	conf.add_os_flags('CFLAGS', dup=False)
 
 @conf
 def cxx_add_flags(conf):
 	"""
 	Add CXXFLAGS / CPPFLAGS from os.environ to conf.env
 	"""
-	conf.add_os_flags('CPPFLAGS', 'CXXFLAGS')
-	conf.add_os_flags('CXXFLAGS')
+	conf.add_os_flags('CPPFLAGS', dup=False)
+	conf.add_os_flags('CXXFLAGS', dup=False)
 
 @conf
 def link_add_flags(conf):
 	"""
 	Add LINKFLAGS / LDFLAGS from os.environ to conf.env
 	"""
-	conf.add_os_flags('LINKFLAGS')
-	conf.add_os_flags('LDFLAGS')
+	conf.add_os_flags('LINKFLAGS', dup=False)
+	conf.add_os_flags('LDFLAGS', dup=False)
 
 @conf
 def cc_load_tools(conf):
@@ -978,14 +1017,9 @@ def get_cc_version(conf, cc, gcc=False, icc=False, clang=False):
 	cmd = cc + ['-dM', '-E', '-']
 	env = conf.env.env or None
 	try:
-		p = Utils.subprocess.Popen(cmd, stdin=Utils.subprocess.PIPE, stdout=Utils.subprocess.PIPE, stderr=Utils.subprocess.PIPE, env=env)
-		p.stdin.write('\n'.encode())
-		out = p.communicate()[0]
+		out, err = conf.cmd_and_log(cmd, output=0, input='\n'.encode(), env=env)
 	except Exception:
 		conf.fatal('Could not determine the compiler version %r' % cmd)
-
-	if not isinstance(out, str):
-		out = out.decode(sys.stdout.encoding or 'iso8859-1')
 
 	if gcc:
 		if out.find('__INTEL_COMPILER') >= 0:
@@ -999,7 +1033,7 @@ def get_cc_version(conf, cc, gcc=False, icc=False, clang=False):
 	if clang and out.find('__clang__') < 0:
 		conf.fatal('Not clang/clang++')
 	if not clang and out.find('__clang__') >= 0:
-		conf.fatal('Could not find g++, if renamed try eg: CXX=g++48 waf configure')
+		conf.fatal('Could not find gcc/g++ (only Clang), if renamed try eg: CC=gcc48 CXX=g++48 waf configure')
 
 	k = {}
 	if icc or gcc or clang:
@@ -1013,9 +1047,6 @@ def get_cc_version(conf, cc, gcc=False, icc=False, clang=False):
 
 		def isD(var):
 			return var in k
-
-		def isT(var):
-			return var in k and k[var] != '0'
 
 		# Some documentation is available at http://predef.sourceforge.net
 		# The names given to DEST_OS must match what Utils.unversioned_sys_platform() returns.
@@ -1053,17 +1084,11 @@ def get_cc_version(conf, cc, gcc=False, icc=False, clang=False):
 			ver = k['__INTEL_COMPILER']
 			conf.env['CC_VERSION'] = (ver[:-2], ver[-2], ver[-1])
 		else:
-			if isD('__clang__'):
-				try:
-					conf.env['CC_VERSION'] = (k['__clang_major__'], k['__clang_minor__'], k['__clang_patchlevel__'])
-				except KeyError:
-					# Some versions of OSX have a faux-gcc "clang" without clang version defines
-					conf.env['CC_VERSION'] = (k['__GNUC__'], k['__GNUC_MINOR__'], k['__GNUC_PATCHLEVEL__'])
+			if isD('__clang__') and isD('__clang_major__'):
+				conf.env['CC_VERSION'] = (k['__clang_major__'], k['__clang_minor__'], k['__clang_patchlevel__'])
 			else:
-				try:
-					conf.env['CC_VERSION'] = (k['__GNUC__'], k['__GNUC_MINOR__'], k['__GNUC_PATCHLEVEL__'])
-				except KeyError:
-					conf.env['CC_VERSION'] = (k['__GNUC__'], k['__GNUC_MINOR__'], 0)
+				# older clang versions and gcc
+				conf.env['CC_VERSION'] = (k['__GNUC__'], k['__GNUC_MINOR__'], k.get('__GNUC_PATCHLEVEL__', '0'))
 	return k
 
 @conf
@@ -1165,6 +1190,7 @@ def multicheck(self, *k, **kw):
 			self.keep = False
 			self.returned_tasks = []
 			self.task_sigs = {}
+			self.progress_bar = 0
 		def total(self):
 			return len(tasks)
 		def to_log(self, *k, **kw):
@@ -1195,10 +1221,17 @@ def multicheck(self, *k, **kw):
 	for x in tasks:
 		x.logger.memhandler.flush()
 
+	if p.error:
+		for x in p.error:
+			if getattr(x, 'err_msg', None):
+				self.to_log(x.err_msg)
+				self.end_msg('fail', color='RED')
+				raise Errors.WafError('There is an error in the library, read config.log for more information')
+
 	for x in tasks:
 		if x.hasrun != Task.SUCCESS:
 			self.end_msg(kw.get('errmsg', 'no'), color='YELLOW', **kw)
-			self.fatal(kw.get('fatalmsg', None) or 'One of the tests has failed, see the config.log for more information')
+			self.fatal(kw.get('fatalmsg', None) or 'One of the tests has failed, read config.log for more information')
 
 	self.end_msg('ok', **kw)
 

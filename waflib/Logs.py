@@ -6,7 +6,7 @@
 logging, colors, terminal width and pretty-print
 """
 
-import os, re, traceback, sys, types
+import os, re, traceback, sys
 from waflib import Utils, ansiterm
 
 if not os.environ.get('NOSYNC', False):
@@ -20,8 +20,8 @@ if not os.environ.get('NOSYNC', False):
 # in case someone uses the root logger
 import logging
 
-LOG_FORMAT = "%(asctime)s %(c1)s%(zone)s%(c2)s %(message)s"
-HOUR_FORMAT = "%H:%M:%S"
+LOG_FORMAT = os.environ.get('WAF_LOG_FORMAT', '%(asctime)s %(c1)s%(zone)s%(c2)s %(message)s')
+HOUR_FORMAT = os.environ.get('WAF_HOUR_FORMAT', '%H:%M:%S')
 
 zones = ''
 verbose = 0
@@ -35,12 +35,18 @@ colors_lst = {
 'PINK'  :'\x1b[35m',
 'BLUE'  :'\x1b[01;34m',
 'CYAN'  :'\x1b[36m',
+'GREY'  :'\x1b[37m',
 'NORMAL':'\x1b[0m',
 'cursor_on'  :'\x1b[?25h',
 'cursor_off' :'\x1b[?25l',
 }
 
 indicator = '\r\x1b[K%s%s%s'
+
+try:
+	unicode
+except NameError:
+	unicode = None
 
 def enable_colors(use):
 	if use == 1:
@@ -149,7 +155,7 @@ class log_handler(logging.StreamHandler):
 	def emit_override(self, record, **kw):
 		self.terminator = getattr(record, 'terminator', '\n')
 		stream = self.stream
-		if hasattr(types, "UnicodeType"):
+		if unicode:
 			# python2
 			msg = self.formatter.format(record)
 			fs = '%s' + self.terminator
@@ -315,7 +321,7 @@ def free_logger(logger):
 		for x in logger.handlers:
 			x.close()
 			logger.removeHandler(x)
-	except Exception as e:
+	except Exception:
 		pass
 
 def pprint(col, msg, label='', sep='\n'):

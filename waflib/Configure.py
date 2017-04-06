@@ -151,14 +151,8 @@ class ConfigurationContext(Context.Context):
 			if ver:
 				app = "%s (%s)" % (app, ver)
 
-		now = time.ctime()
-		pyver = sys.hexversion
-		systype = sys.platform
-		args = " ".join(sys.argv)
-		wafver = Context.WAFVERSION
-		abi = Context.ABI
-		self.to_log(conf_template % vars())
-
+		params = {'now': time.ctime(), 'pyver': sys.hexversion, 'systype': sys.platform, 'args': " ".join(sys.argv), 'wafver': Context.WAFVERSION, 'abi': Context.ABI, 'app': app}
+		self.to_log(conf_template % params)
 		self.msg('Setting top to', self.srcnode.abspath())
 		self.msg('Setting out to', self.bldnode.abspath())
 
@@ -192,11 +186,11 @@ class ConfigurationContext(Context.Context):
 		env['files'] = self.files
 		env['environ'] = dict(self.environ)
 
-		if not self.env.NO_LOCK_IN_RUN:
+		if not self.env.NO_LOCK_IN_RUN and not getattr(Options.options, 'no_lock_in_run'):
 			env.store(os.path.join(Context.run_dir, Options.lockfile))
-		if not self.env.NO_LOCK_IN_TOP:
+		if not self.env.NO_LOCK_IN_TOP and not getattr(Options.options, 'no_lock_in_top'):
 			env.store(os.path.join(Context.top_dir, Options.lockfile))
-		if not self.env.NO_LOCK_IN_OUT:
+		if not self.env.NO_LOCK_IN_OUT and not getattr(Options.options, 'no_lock_in_out'):
 			env.store(os.path.join(Context.out_dir, Options.lockfile))
 
 	def prepare_env(self, env):
@@ -208,17 +202,17 @@ class ConfigurationContext(Context.Context):
 		"""
 		if not env.PREFIX:
 			if Options.options.prefix or Utils.is_win32:
-				env.PREFIX = os.path.abspath(os.path.expanduser(Options.options.prefix))
+				env.PREFIX = Utils.sane_path(Options.options.prefix)
 			else:
 				env.PREFIX = ''
 		if not env.BINDIR:
 			if Options.options.bindir:
-				env.BINDIR = os.path.abspath(os.path.expanduser(Options.options.bindir))
+				env.BINDIR = Utils.sane_path(Options.options.bindir)
 			else:
 				env.BINDIR = Utils.subst_vars('${PREFIX}/bin', env)
 		if not env.LIBDIR:
 			if Options.options.libdir:
-				env.LIBDIR = os.path.abspath(os.path.expanduser(Options.options.libdir))
+				env.LIBDIR = Utils.sane_path(Options.options.libdir)
 			else:
 				env.LIBDIR = Utils.subst_vars('${PREFIX}/lib%s' % Utils.lib64(), env)
 
@@ -234,7 +228,7 @@ class ConfigurationContext(Context.Context):
 			tmpenv = self.all_envs[key]
 			tmpenv.store(os.path.join(self.cachedir.abspath(), key + Build.CACHE_SUFFIX))
 
-	def load(self, input, tooldir=None, funs=None):
+	def load(self, input, tooldir=None, funs=None, with_sys_path=True):
 		"""
 		Load Waf tools, which will be imported whenever a build is started.
 
@@ -252,7 +246,7 @@ class ConfigurationContext(Context.Context):
 			# avoid loading the same tool more than once with the same functions
 			# used by composite projects
 
-			mag = (tool, id(self.env), funs)
+			mag = (tool, id(self.env), tooldir, funs)
 			if mag in self.tool_cache:
 				self.to_log('(tool %s is already loaded, skipping)' % tool)
 				continue
@@ -260,7 +254,7 @@ class ConfigurationContext(Context.Context):
 
 			module = None
 			try:
-				module = Context.load_tool(tool, tooldir, ctx=self)
+				module = Context.load_tool(tool, tooldir, ctx=self, with_sys_path=with_sys_path)
 			except ImportError as e:
 				self.fatal('Could not load the Waf tool %r from %r\n%s' % (tool, sys.path, e))
 			except Exception as e:
@@ -347,12 +341,13 @@ def conf(f):
 			if mandatory:
 				raise
 
+	fun.__name__ = f.__name__
 	setattr(ConfigurationContext, f.__name__, fun)
 	setattr(Build.BuildContext, f.__name__, fun)
 	return f
 
 @conf
-def add_os_flags(self, var, dest=None):
+def add_os_flags(self, var, dest=None, dup=True):
 	"""
 	Import operating system environment values into ``conf.env`` dict::
 
@@ -363,10 +358,16 @@ def add_os_flags(self, var, dest=None):
 	:type var: string
 	:param dest: destination variable, by default the same as var
 	:type dest: string
+	:param dup: add the same set of flags again
+	:type dup: bool
 	"""
-	# do not use 'get' to make certain the variable is not defined
-	try: self.env.append_value(dest or var, shlex.split(self.environ[var]))
-	except KeyError: pass
+	try:
+		flags = shlex.split(self.environ[var])
+	except KeyError:
+		return
+	# TODO: in waf 1.9, make dup=False the default
+	if dup or ''.join(flags) not in ''.join(Utils.to_list(self.env[dest or var])):
+		self.env.append_value(dest or var, flags)
 
 @conf
 def cmd_to_list(self, cmd):
@@ -416,7 +417,7 @@ def find_file(self, filename, path_list=[]):
 	"""
 	for n in Utils.to_list(filename):
 		for d in Utils.to_list(path_list):
-			p = os.path.join(d, n)
+			p = os.path.expanduser(os.path.join(d, n))
 			if os.path.exists(p):
 				return p
 	self.fatal('Could not find %r' % filename)
@@ -522,7 +523,6 @@ def find_binary(self, filenames, exts, paths):
 					if os.path.isfile(x):
 						return x
 	return None
-
 
 @conf
 def run_build(self, *k, **kw):

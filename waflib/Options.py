@@ -126,6 +126,10 @@ class OptionsContext(Context.Context):
 		gr.add_option('-o', '--out', action='store', default='', help='build dir for the project', dest='out')
 		gr.add_option('-t', '--top', action='store', default='', help='src dir for the project', dest='top')
 
+		gr.add_option('--no-lock-in-run', action='store_true', default='', help=optparse.SUPPRESS_HELP, dest='no_lock_in_run')
+		gr.add_option('--no-lock-in-out', action='store_true', default='', help=optparse.SUPPRESS_HELP, dest='no_lock_in_out')
+		gr.add_option('--no-lock-in-top', action='store_true', default='', help=optparse.SUPPRESS_HELP, dest='no_lock_in_top')
+
 		default_prefix = getattr(Context.g_module, 'default_prefix', os.environ.get('PREFIX'))
 		if not default_prefix:
 			if platform == 'win32':
@@ -252,7 +256,7 @@ class OptionsContext(Context.Context):
 				commands.append(arg)
 
 		if options.destdir:
-			options.destdir = os.path.abspath(os.path.expanduser(options.destdir))
+			options.destdir = Utils.sane_path(options.destdir)
 
 		if options.verbose >= 1:
 			self.load('errcheck')

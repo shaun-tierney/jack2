@@ -199,7 +199,7 @@ struct JackNetExtMaster : public JackNetMasterInterface {
 
         // Request socket
         if (fSocket.NewSocket() == SOCKET_ERROR) {
-            jack_error("Can't create the network management input socket : %s", StrError(NET_ERROR_CODE));
+            jack_error("Can't create the network manager input socket : %s", StrError(NET_ERROR_CODE));
             return -1;
         }
 
@@ -519,7 +519,7 @@ struct JackNetExtSlave : public JackNetSlaveInterface, public JackRunnableInterf
         fBufferSizeCallback(NULL), fBufferSizeArg(NULL),
         fSampleRateCallback(NULL), fSampleRateArg(NULL)
    {
-        char host_name[JACK_CLIENT_NAME_SIZE];
+        char host_name[JACK_CLIENT_NAME_SIZE + 1];
 
         // Request parameters
         assert(strlen(ip) < 32);

@@ -6,8 +6,8 @@
 MacOSX related tools
 """
 
-import os, shutil, sys, platform
-from waflib import TaskGen, Task, Build, Options, Utils, Errors
+import os, shutil, platform
+from waflib import Task, Utils, Errors
 from waflib.TaskGen import taskgen_method, feature, after_method, before_method
 
 app_info = '''
@@ -24,7 +24,7 @@ app_info = '''
 	<key>NOTE</key>
 	<string>THIS IS A GENERATED FILE, DO NOT MODIFY</string>
 	<key>CFBundleExecutable</key>
-	<string>%s</string>
+	<string>{app_name}</string>
 </dict>
 </plist>
 '''
@@ -48,7 +48,6 @@ def create_bundle_dirs(self, name, out):
 	"""
 	Create bundle folders, used by :py:func:`create_task_macplist` and :py:func:`create_task_macapp`
 	"""
-	bld = self.bld
 	dir = out.parent.find_or_declare(name)
 	dir.mkdir()
 	macos = dir.find_or_declare(['Contents', 'MacOS'])
@@ -71,7 +70,7 @@ def create_task_macapp(self):
 	To compile an executable into a Mac application (a .app), set its *mac_app* attribute::
 
 		def build(bld):
-			bld.shlib(source='a.c', target='foo', mac_app = True)
+			bld.shlib(source='a.c', target='foo', mac_app=True)
 
 	To force *all* executables to be transformed into Mac applications::
 
@@ -91,7 +90,22 @@ def create_task_macapp(self):
 		inst_to = getattr(self, 'install_path', '/Applications') + '/%s/Contents/MacOS/' % name
 		self.bld.install_files(inst_to, n1, chmod=Utils.O755)
 
+		if getattr(self, 'mac_files', None):
+			# this only accepts files; they will be installed as seen from mac_files_root
+			mac_files_root = getattr(self, 'mac_files_root', None)
+			if isinstance(mac_files_root, str):
+				mac_files_root = self.path.find_node(mac_files_root)
+				if not mac_files_root:
+					self.bld.fatal('Invalid mac_files_root %r' % self.mac_files_root)
+			res_dir = n1.parent.parent.make_node('Resources')
+			inst_to = getattr(self, 'install_path', '/Applications') + '/%s/Resources' % name
+			for node in self.to_nodes(self.mac_files):
+				relpath = node.path_from(mac_files_root or node.parent)
+				self.create_task('macapp', node, res_dir.make_node(relpath))
+				self.bld.install_as(os.path.join(inst_to, relpath), node)
+
 		if getattr(self, 'mac_resources', None):
+			# TODO remove in waf 1.9
 			res_dir = n1.parent.parent.make_node('Resources')
 			inst_to = getattr(self, 'install_path', '/Applications') + '/%s/Resources' % name
 			for x in self.to_list(self.mac_resources):
@@ -106,7 +120,7 @@ def create_task_macapp(self):
 					nodes = [node]
 				for node in nodes:
 					rel = node.path_from(parent)
-					tsk = self.create_task('macapp', node, res_dir.make_node(rel))
+					self.create_task('macapp', node, res_dir.make_node(rel))
 					self.bld.install_as(inst_to + '/%s' % rel, node)
 
 		if getattr(self.bld, 'is_install', None):
@@ -127,6 +141,14 @@ def create_task_macplist(self):
 		dir = self.create_bundle_dirs(name, out)
 		n1 = dir.find_or_declare(['Contents', 'Info.plist'])
 		self.plisttask = plisttask = self.create_task('macplist', [], n1)
+		plisttask.context = {
+			'app_name': self.link_task.outputs[0].name,
+			'env': self.env
+		}
+
+		plist_ctx = getattr(self, 'plist_context', None)
+		if (plist_ctx):
+			plisttask.context.update(plist_ctx)
 
 		if getattr(self, 'mac_plist', False):
 			node = self.path.find_resource(self.mac_plist)
@@ -135,7 +157,7 @@ def create_task_macplist(self):
 			else:
 				plisttask.code = self.mac_plist
 		else:
-			plisttask.code = app_info % self.link_task.outputs[0].name
+			plisttask.code = app_info
 
 		inst_to = getattr(self, 'install_path', '/Applications') + '/%s/Contents/' % name
 		self.bld.install_files(inst_to, n1)
@@ -184,5 +206,6 @@ class macplist(Task.Task):
 			txt = self.code
 		else:
 			txt = self.inputs[0].read()
+		context = getattr(self, 'context', {})
+		txt = txt.format(**context)
 		self.outputs[0].write(txt)
-
