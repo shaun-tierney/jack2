@@ -25,8 +25,8 @@ USELIB_VARS['cxx']      = set(['INCLUDES', 'FRAMEWORKPATH', 'DEFINES', 'CPPFLAGS
 USELIB_VARS['d']        = set(['INCLUDES', 'DFLAGS'])
 USELIB_VARS['includes'] = set(['INCLUDES', 'FRAMEWORKPATH', 'ARCH'])
 
-USELIB_VARS['cprogram'] = USELIB_VARS['cxxprogram'] = set(['LIB', 'STLIB', 'LIBPATH', 'STLIBPATH', 'LINKFLAGS', 'RPATH', 'LINKDEPS', 'FRAMEWORK', 'FRAMEWORKPATH', 'ARCH'])
-USELIB_VARS['cshlib']   = USELIB_VARS['cxxshlib']   = set(['LIB', 'STLIB', 'LIBPATH', 'STLIBPATH', 'LINKFLAGS', 'RPATH', 'LINKDEPS', 'FRAMEWORK', 'FRAMEWORKPATH', 'ARCH'])
+USELIB_VARS['cprogram'] = USELIB_VARS['cxxprogram'] = set(['LIB', 'STLIB', 'LIBPATH', 'STLIBPATH', 'LINKFLAGS', 'RPATH', 'LINKDEPS', 'FRAMEWORK', 'FRAMEWORKPATH', 'ARCH', 'LDFLAGS'])
+USELIB_VARS['cshlib']   = USELIB_VARS['cxxshlib']   = set(['LIB', 'STLIB', 'LIBPATH', 'STLIBPATH', 'LINKFLAGS', 'RPATH', 'LINKDEPS', 'FRAMEWORK', 'FRAMEWORKPATH', 'ARCH', 'LDFLAGS'])
 USELIB_VARS['cstlib']   = USELIB_VARS['cxxstlib']   = set(['ARFLAGS', 'LINKDEPS'])
 
 USELIB_VARS['dprogram'] = set(['LIB', 'STLIB', 'LIBPATH', 'STLIBPATH', 'LINKFLAGS', 'RPATH', 'LINKDEPS'])
@@ -158,7 +158,10 @@ class link_task(Task.Task):
 					if len(nums) >= 2:
 						pattern += '.%s' % nums[1]
 
-			tmp = folder + os.sep + pattern % name
+			if folder:
+				tmp = folder + os.sep + pattern % name
+			else:
+				tmp = pattern % name
 			target = self.generator.path.find_or_declare(tmp)
 		self.set_outputs(target)
 
@@ -489,10 +492,19 @@ def apply_vnum(self):
 		def build(bld):
 			bld.shlib(source='a.c', target='foo', vnum='14.15.16')
 
-	In this example, ``libfoo.so`` is installed as ``libfoo.so.1.2.3``, and the following symbolic links are created:
+	In this example on Linux platform, ``libfoo.so`` is installed as ``libfoo.so.14.15.16``, and the following symbolic links are created:
 
-	* ``libfoo.so   → libfoo.so.1.2.3``
-	* ``libfoo.so.1 → libfoo.so.1.2.3``
+	* ``libfoo.so    → libfoo.so.14.15.16``
+	* ``libfoo.so.14 → libfoo.so.14.15.16``
+
+	By default, the library will be assigned SONAME ``libfoo.so.14``, effectively declaring ABI compatibility between all minor and patch releases for the major version of the library.  When necessary, the compatibility can be explicitly defined using `cnum` parameter:
+
+		def build(bld):
+			bld.shlib(source='a.c', target='foo', vnum='14.15.16', cnum='14.15')
+
+	In this case, the assigned SONAME will be ``libfoo.so.14.15`` with ABI compatibility only between path releases for a specific major and minor version of the library.
+
+	On OS X platform, install-name parameter will follow the above logic for SONAME with exception that it also specifies an absolute path (based on install_path) of the library.
 	"""
 	if not getattr(self, 'vnum', '') or os.name != 'posix' or self.env.DEST_BINFMT not in ('elf', 'mac-o'):
 		return
@@ -503,13 +515,18 @@ def apply_vnum(self):
 	nums = self.vnum.split('.')
 	node = link.outputs[0]
 
+	cnum = getattr(self, 'cnum', str(nums[0]))
+	cnums = cnum.split('.')
+	if len(cnums)>len(nums) or nums[0:len(cnums)] != cnums:
+		raise Errors.WafError('invalid compatibility version %s' % cnum)
+
 	libname = node.name
 	if libname.endswith('.dylib'):
 		name3 = libname.replace('.dylib', '.%s.dylib' % self.vnum)
-		name2 = libname.replace('.dylib', '.%s.dylib' % nums[0])
+		name2 = libname.replace('.dylib', '.%s.dylib' % cnum)
 	else:
 		name3 = libname + '.' + self.vnum
-		name2 = libname + '.' + nums[0]
+		name2 = libname + '.' + cnum
 
 	# add the so name for the ld linker - to disable, just unset env.SONAME_ST
 	if self.env.SONAME_ST:
@@ -548,8 +565,10 @@ def apply_vnum(self):
 			inst_to = self.link_task.__class__.inst_to
 		if inst_to:
 			p = Utils.subst_vars(inst_to, self.env)
-			path = os.path.join(p, self.link_task.outputs[0].name)
+			path = os.path.join(p, name2)
 			self.env.append_value('LINKFLAGS', ['-install_name', path])
+			self.env.append_value('LINKFLAGS', '-Wl,-compatibility_version,%s' % cnum)
+			self.env.append_value('LINKFLAGS', '-Wl,-current_version,%s' % self.vnum)
 
 class vnum(Task.Task):
 	"""

@@ -8,8 +8,6 @@
 g++/llvm detection.
 """
 
-import os, sys
-from waflib import Configure, Options, Utils
 from waflib.Tools import ccroot, ar
 from waflib.Configure import conf
 
@@ -97,7 +95,7 @@ def gxx_modifier_darwin(conf):
 	"""Configuration flags for executing g++ on MacOS"""
 	v = conf.env
 	v['CXXFLAGS_cxxshlib']   = ['-fPIC']
-	v['LINKFLAGS_cxxshlib']  = ['-dynamiclib', '-Wl,-compatibility_version,1', '-Wl,-current_version,1']
+	v['LINKFLAGS_cxxshlib']  = ['-dynamiclib']
 	v['cxxshlib_PATTERN']    = 'lib%s.dylib'
 	v['FRAMEWORKPATH_ST']    = '-F%s'
 	v['FRAMEWORK_ST']        = ['-framework']

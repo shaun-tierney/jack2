@@ -32,11 +32,15 @@ void JackPosixSemaphore::BuildName(const char* client_name, const char* server_n
 {
     char ext_client_name[SYNC_MAX_NAME_SIZE + 1];
     JackTools::RewriteName(client_name, ext_client_name);
+#if __APPLE__  // POSIX semaphore names are limited to 32 characters... 
+    snprintf(res, 32, "js_%s", ext_client_name); 
+#else
     if (getenv("JACK_PROMISCUOUS_SERVER")) {
         snprintf(res, size, "/jack_sem.%s_%s", server_name, ext_client_name);
     } else {
         snprintf(res, size, "/jack_sem.%d_%s_%s", JackTools::GetUID(), server_name, ext_client_name);
     }
+#endif
 }
 
 bool JackPosixSemaphore::Signal()
@@ -48,8 +52,9 @@ bool JackPosixSemaphore::Signal()
         return false;
     }
 
-    if (fFlush)
+    if (fFlush) {
         return true;
+    }
 
     if ((res = sem_post(fSemaphore)) != 0) {
         jack_error("JackPosixSemaphore::Signal name = %s err = %s", fName, strerror(errno));
@@ -66,8 +71,9 @@ bool JackPosixSemaphore::SignalAll()
         return false;
     }
 
-    if (fFlush)
+    if (fFlush) {
         return true;
+    }
 
     if ((res = sem_post(fSemaphore)) != 0) {
         jack_error("JackPosixSemaphore::SignalAll name = %s err = %s", fName, strerror(errno));
@@ -75,7 +81,6 @@ bool JackPosixSemaphore::SignalAll()
     return (res == 0);
 }
 
-/*
 bool JackPosixSemaphore::Wait()
 {
     int res;
@@ -84,17 +89,6 @@ bool JackPosixSemaphore::Wait()
         jack_error("JackPosixSemaphore::Wait name = %s already deallocated!!", fName);
         return false;
     }
-
-    if ((res = sem_wait(fSemaphore)) != 0) {
-        jack_error("JackPosixSemaphore::Wait name = %s err = %s", fName, strerror(errno));
-    }
-    return (res == 0);
-}
-*/
-
-bool JackPosixSemaphore::Wait()
-{
-    int res;
 
     while ((res = sem_wait(fSemaphore) < 0)) {
         jack_error("JackPosixSemaphore::Wait name = %s err = %s", fName, strerror(errno));
@@ -172,11 +166,14 @@ bool JackPosixSemaphore::ConnectInput(const char* name, const char* server_name)
     if ((fSemaphore = sem_open(fName, O_RDWR)) == (sem_t*)SEM_FAILED) {
         jack_error("Connect: can't connect named semaphore name = %s err = %s", fName, strerror(errno));
         return false;
-    } else {
+    } else if (fSemaphore) {
         int val = 0;
         sem_getvalue(fSemaphore, &val);
         jack_log("JackPosixSemaphore::Connect sem_getvalue %ld", val);
         return true;
+    } else {
+        jack_error("Connect: fSemaphore not initialized!");
+        return false;
     }
 }
 
